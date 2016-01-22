@@ -14,39 +14,32 @@
 # You should have received a copy of the GNU General Public License
 # along with OpenBeeLab.  If not, see <http://www.gnu.org/licenses/>.
 
-dbDriver = require '../../dbUtil/javascript/dbUtil'
-config = require './config'
-db = dbDriver.database(config.database)
+dbDriver = require '../../openbeelab-db-util/javascript/dbDriver'
 Promise = require 'promise'
+config = require './config'
+getExternalData = require './openweathermap'
 
-dbGet = Promise.denodeify db.get.bind(db)
+db = dbDriver.connectToServer(dbConfig.database).useDb(config.database.name + "_config")
 
-apiary = null
-apiaryLocation = null
+db.get '_design/locations/_view/all'
+.then (locations) ->
 
-apiariesUrl = '_design/apiaries/_view/by_name?key="'+ config.database.apiary_name+'"'
-dbGet apiariesUrl
-.then (apiaries) ->
+    for location in locations.rows
 
-    apiary = apiaries[0].value
-    return dbGet apiary.location_id
+        do (location)->
 
-.then (location) ->
+            location = location.value
 
-    apiaryLocation = location
+            getExternalData location,(name,data)->
 
-    getExternalData = require './openweathermap'
+                measure =
+                    timestamp : new Date()
+                    location_id : location._id
+                    type : 'measure'
+                    name : name
+                    data : data
 
-    getExternalData location,(name,data)->
+                db.save measure
+                .then (measure) ->
 
-        measure =
-            timestamp : new Date()
-            location_id : location._id
-            apiary_id : apiary._id
-            type : 'measure'
-            name : name
-            data : data
-
-        db.save measure,(err,measure) ->
-
-            console.log "openweathermap weather data uploaded to db " + config.database.name
+                    console.log "openweathermap weather data uploaded to db " + config.database.name
